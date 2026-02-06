@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clip Automator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-brand">Clip Automator</div>
+        <div class="nav-links">
+            <a href="#" onclick="showTab('pipeline')" class="nav-link active" id="nav-pipeline">Pipeline</a>
+            <a href="#" onclick="showTab('campaigns')" class="nav-link" id="nav-campaigns">Campanhas</a>
+            <a href="#" onclick="showTab('research')" class="nav-link" id="nav-research">Pesquisa</a>
+            <a href="#" onclick="showTab('costs')" class="nav-link" id="nav-costs">Custos</a>
+            <a href="#" onclick="showTab('settings')" class="nav-link" id="nav-settings">Config</a>
+        </div>
+    </nav>
+
+    <main>
+        <!-- PIPELINE -->
+        <section id="tab-pipeline" class="tab active">
+            <h2>Gerar Clipes</h2>
+            <div class="card">
+                <div class="form-group">
+                    <label>URL do Video (YouTube)</label>
+                    <input type="text" id="pipeline-url" placeholder="https://youtube.com/watch?v=..." class="input-full">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Clipes</label>
+                        <input type="number" id="pipeline-clips" value="5" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label>Categoria</label>
+                        <input type="text" id="pipeline-category" value="FAMOSOS">
+                    </div>
+                    <div class="form-group">
+                        <label>Campanha ID</label>
+                        <input type="number" id="pipeline-campaign" placeholder="Opcional">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Headline (deixe vazio para gerar automatico)</label>
+                    <input type="text" id="pipeline-headline" placeholder="Opcional" class="input-full">
+                </div>
+                <div class="form-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="pipeline-smart">
+                        <span class="toggle-switch"></span>
+                        Usar Claude AI (analise inteligente)
+                    </label>
+                </div>
+                <button onclick="startPipeline()" class="btn btn-primary" id="btn-pipeline">Gerar Clipes</button>
+            </div>
+
+            <div id="pipeline-status" class="card hidden">
+                <h3>Status</h3>
+                <div id="pipeline-logs" class="log-area"></div>
+                <div id="pipeline-result"></div>
+            </div>
+        </section>
+
+        <!-- CAMPANHAS -->
+        <section id="tab-campaigns" class="tab">
+            <h2>Campanhas</h2>
+            <div class="card">
+                <h3>Nova Campanha</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Nome</label>
+                        <input type="text" id="camp-name" placeholder="Campanha Verao">
+                    </div>
+                    <div class="form-group">
+                        <label>Influenciador</label>
+                        <input type="text" id="camp-influencer" placeholder="FulanoTV">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>R$ por 1k views</label>
+                        <input type="number" id="camp-pay" step="0.5" value="5">
+                    </div>
+                    <div class="form-group">
+                        <label>Views minimas</label>
+                        <input type="number" id="camp-minviews" value="10000">
+                    </div>
+                </div>
+                <button onclick="createCampaign()" class="btn btn-primary">Criar Campanha</button>
+            </div>
+
+            <div class="card">
+                <h3>Campanhas Ativas</h3>
+                <div id="campaigns-list"><p class="muted">Carregando...</p></div>
+            </div>
+
+            <div class="card">
+                <h3>Registrar Link de Post</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Campanha ID</label>
+                        <input type="number" id="link-campaign" placeholder="#">
+                    </div>
+                    <div class="form-group">
+                        <label>Clip ID</label>
+                        <input type="number" id="link-clip" placeholder="#">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Plataforma</label>
+                        <select id="link-platform">
+                            <option value="instagram">Instagram</option>
+                            <option value="tiktok">TikTok</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Link do Post</label>
+                        <input type="text" id="link-url" placeholder="https://..." class="input-full">
+                    </div>
+                </div>
+                <button onclick="addLink()" class="btn btn-secondary">Registrar Link</button>
+            </div>
+        </section>
+
+        <!-- PESQUISA -->
+        <section id="tab-research" class="tab">
+            <h2>Pesquisa Competitiva</h2>
+            <div class="card">
+                <div class="form-group">
+                    <label>Nome do Influenciador</label>
+                    <input type="text" id="research-influencer" placeholder="FulanoTV" class="input-full">
+                </div>
+                <p class="muted">Busca shorts, clipes e cortes existentes do influenciador no YouTube. Analisa o que funciona.</p>
+                <button onclick="startResearch()" class="btn btn-primary" id="btn-research">Pesquisar</button>
+            </div>
+            <div id="research-status" class="card hidden">
+                <h3>Resultado</h3>
+                <pre id="research-result" class="log-area"></pre>
+            </div>
+        </section>
+
+        <!-- CUSTOS -->
+        <section id="tab-costs" class="tab">
+            <h2>Auditoria de Custos - API Claude</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="cost-total-brl">R$0.00</div>
+                    <div class="stat-label">Gasto Total</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="cost-total-calls">0</div>
+                    <div class="stat-label">Chamadas API</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="cost-total-usd">US$0.00</div>
+                    <div class="stat-label">Em Dolar</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Por Operacao</h3>
+                <div id="costs-by-op"></div>
+            </div>
+
+            <div class="card">
+                <h3>Calcular ROI</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Receita total das campanhas (R$)</label>
+                        <input type="number" id="roi-revenue" step="10" placeholder="150.00">
+                    </div>
+                    <div class="form-group" style="display:flex;align-items:flex-end">
+                        <button onclick="calculateROI()" class="btn btn-secondary">Calcular</button>
+                    </div>
+                </div>
+                <div id="roi-result"></div>
+            </div>
+
+            <div class="card">
+                <h3>Ultimas Chamadas</h3>
+                <div id="costs-recent"></div>
+            </div>
+        </section>
+
+        <!-- CONFIG -->
+        <section id="tab-settings" class="tab">
+            <h2>Configuracoes</h2>
+            <div class="card">
+                <h3>Claude AI (Analise Inteligente)</h3>
+                <div class="smart-toggle">
+                    <label class="toggle-label big">
+                        <input type="checkbox" id="smart-toggle" onchange="toggleSmart()">
+                        <span class="toggle-switch"></span>
+                        <span id="smart-status-text">Carregando...</span>
+                    </label>
+                </div>
+                <p class="muted" id="smart-description">Quando ligado, usa IA para encontrar momentos virais e gerar headlines. Quando desligado, usa heuristicas gratuitas.</p>
+            </div>
+
+            <div class="card">
+                <h3>API Keys</h3>
+                <p class="muted">As chaves ficam apenas na memoria da sessao. Configure novamente ao reiniciar.</p>
+                <div class="form-group">
+                    <label>Anthropic API Key</label>
+                    <input type="password" id="env-anthropic" placeholder="sk-ant-api03-..." class="input-full">
+                </div>
+                <div class="form-group">
+                    <label>Twitch Client ID</label>
+                    <input type="text" id="env-twitch-id" placeholder="Opcional" class="input-full">
+                </div>
+                <div class="form-group">
+                    <label>Twitch Client Secret</label>
+                    <input type="password" id="env-twitch-secret" placeholder="Opcional" class="input-full">
+                </div>
+                <button onclick="saveEnv()" class="btn btn-primary">Salvar Keys</button>
+                <span id="env-status" class="muted"></span>
+            </div>
+
+            <div class="card">
+                <h3>Templates de Edicao</h3>
+                <div id="templates-list"></div>
+            </div>
+        </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

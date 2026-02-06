@@ -3,3 +3,4 @@ whisper-timestamped>=1.15.0
 openai-whisper>=20231117
 anthropic>=0.40.0
 Pillow>=10.0.0
+flask>=3.0.0
