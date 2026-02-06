@@ -1,0 +1,171 @@
+{
+  "name": "Clip Automator - Pipeline Completo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "start-pipeline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "clip-pipeline-start"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://worker:8000/research",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "influencer",
+              "value": "={{ $json.body.influencer }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "research-node",
+      "name": "1. Pesquisar Influenciador",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://worker:8000/pipeline/full",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.body.youtube_url }}"
+            },
+            {
+              "name": "num_clips",
+              "value": "={{ $json.body.num_clips || 5 }}"
+            },
+            {
+              "name": "category",
+              "value": "={{ $json.body.category || 'FAMOSOS' }}"
+            },
+            {
+              "name": "campaign_id",
+              "value": "={{ $json.body.campaign_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "pipeline-node",
+      "name": "2. Gerar Clipes (YouTube)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://worker:8000/twitch/clips",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "username",
+              "value": "={{ $json.body.twitch_username }}"
+            },
+            {
+              "name": "max_clips",
+              "value": "={{ $json.body.num_clips || 10 }}"
+            },
+            {
+              "name": "min_views",
+              "value": "={{ $json.body.min_views || 1000 }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "twitch-node",
+      "name": "2b. Buscar Clipes (Twitch)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.source }}",
+              "operation": "equals",
+              "value2": "twitch"
+            }
+          ]
+        }
+      },
+      "id": "switch-source",
+      "name": "YouTube ou Twitch?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [350, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ok', research: $node['1. Pesquisar Influenciador'].json, clips: $node['2. Gerar Clipes (YouTube)'].json || $node['2b. Buscar Clipes (Twitch)'].json }) }}"
+      },
+      "id": "response-node",
+      "name": "Resposta Final",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [800, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          { "node": "1. Pesquisar Influenciador", "type": "main", "index": 0 },
+          { "node": "YouTube ou Twitch?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "YouTube ou Twitch?": {
+      "main": [
+        [{ "node": "2b. Buscar Clipes (Twitch)", "type": "main", "index": 0 }],
+        [{ "node": "2. Gerar Clipes (YouTube)", "type": "main", "index": 0 }]
+      ]
+    },
+    "1. Pesquisar Influenciador": {
+      "main": [
+        [{ "node": "Resposta Final", "type": "main", "index": 0 }]
+      ]
+    },
+    "2. Gerar Clipes (YouTube)": {
+      "main": [
+        [{ "node": "Resposta Final", "type": "main", "index": 0 }]
+      ]
+    },
+    "2b. Buscar Clipes (Twitch)": {
+      "main": [
+        [{ "node": "Resposta Final", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

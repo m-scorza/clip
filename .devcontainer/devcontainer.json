@@ -1,0 +1,29 @@
+{
+  "name": "Clip Automator",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/ffmpeg-apt-get:1": {}
+  },
+  "postCreateCommand": "pip install -r requirements.txt && pip install flask",
+  "forwardPorts": [5000],
+  "portsAttributes": {
+    "5000": {
+      "label": "Clip Automator Web",
+      "onAutoForward": "openBrowser",
+      "visibility": "public"
+    }
+  },
+  "containerEnv": {
+    "FLASK_APP": "web/app.py",
+    "FLASK_ENV": "development"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
+    }
+  },
+  "postStartCommand": "echo '\\n=== Clip Automator pronto! ===\\nRode: python web/app.py\\nOu use o terminal: python main.py chat\\n'"
+}
