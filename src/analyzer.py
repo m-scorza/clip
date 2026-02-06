@@ -5,6 +5,7 @@ Usa combinação de:
 - Análise de energia do áudio (momentos de maior volume/emoção)
 - Transcrição + heurísticas (risadas, reações, frases de impacto)
 - Capítulos do YouTube (se disponíveis)
+- Claude AI (opcional, para análise mais inteligente)
 """
 
 import json
@@ -121,6 +122,8 @@ def find_best_moments(
     min_duration: float = 30.0,
     max_duration: float = 90.0,
     target_duration: float = 60.0,
+    use_claude: bool = False,
+    influencer_name: str = "",
 ) -> list[Moment]:
     """
     Encontra os melhores momentos para clipes.
@@ -129,6 +132,7 @@ def find_best_moments(
     1. Picos de energia no áudio
     2. Palavras-chave na transcrição (reações, risadas, frases impactantes)
     3. Capítulos do YouTube (tendem a ser inícios de tópicos)
+    4. Claude AI (se use_claude=True) - análise inteligente de contexto e narrativa
 
     Args:
         video_info: Metadados do vídeo (do downloader)
@@ -138,11 +142,61 @@ def find_best_moments(
         min_duration: Duração mínima do clipe em segundos
         max_duration: Duração máxima do clipe em segundos
         target_duration: Duração alvo do clipe
+        use_claude: Se True, usa Claude AI para análise (requer ANTHROPIC_API_KEY)
+        influencer_name: Nome do influenciador (melhora análise da Claude)
 
     Returns:
         Lista de Moments ordenados por score
     """
     video_duration = video_info.get("duration", 0)
+
+    # --- Se Claude está habilitado, usa análise inteligente ---
+    if use_claude and transcript and "segments" in transcript:
+        try:
+            from src.claude_ai import find_viral_moments
+
+            full_text = " ".join(
+                seg.get("text", "").strip()
+                for seg in transcript["segments"]
+            )
+
+            claude_moments = find_viral_moments(
+                transcript_text=full_text,
+                segments=transcript["segments"],
+                video_title=video_info.get("title", ""),
+                video_duration=video_duration,
+                num_clips=num_clips,
+                min_duration=min_duration,
+                max_duration=max_duration,
+                target_duration=target_duration,
+                influencer_name=influencer_name,
+            )
+
+            if claude_moments:
+                # Converte para Moment objects
+                moments = []
+                for cm in claude_moments:
+                    text = _get_text_for_timerange(
+                        transcript["segments"], cm["start"], cm["end"]
+                    )
+                    moments.append(Moment(
+                        start=cm["start"],
+                        end=cm["end"],
+                        score=cm["score"],
+                        reason=f"claude: {cm.get('reason', '')}",
+                        text=text,
+                    ))
+                    # Guarda headline e category como atributos extras
+                    moments[-1].headline = cm.get("headline", "")
+                    moments[-1].category = cm.get("category", "FAMOSOS")
+
+                print(f"  Claude AI encontrou {len(moments)} momentos virais.")
+                return moments
+
+        except Exception as e:
+            print(f"  AVISO: Claude AI falhou ({e}), usando heurísticas...")
+
+    # --- Fallback: análise por heurísticas ---
     candidates = []
 
     # --- Sinal 1: Picos de energia no áudio ---

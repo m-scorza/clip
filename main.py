@@ -38,6 +38,7 @@ from config.settings import (
     MIN_CLIP_DURATION_SECONDS,
     NUM_CLIPS_TO_GENERATE,
     TARGET_CLIP_DURATION_SECONDS,
+    USE_CLAUDE_FOR_ANALYSIS,
     WHISPER_LANGUAGE,
     WHISPER_MODEL,
 )
@@ -88,7 +89,11 @@ def run_pipeline(args):
     energy = analyze_audio_energy(audio_path)
 
     # Etapa 3: Encontrar melhores momentos
-    print("\n[3/4] Encontrando melhores momentos...")
+    use_claude = getattr(args, 'smart', False) or USE_CLAUDE_FOR_ANALYSIS
+    if use_claude:
+        print("\n[3/4] Encontrando melhores momentos (Claude AI)...")
+    else:
+        print("\n[3/4] Encontrando melhores momentos...")
     moments = find_best_moments(
         video_info=video_info,
         transcript=transcript,
@@ -97,6 +102,7 @@ def run_pipeline(args):
         min_duration=MIN_CLIP_DURATION_SECONDS,
         max_duration=MAX_CLIP_DURATION_SECONDS,
         target_duration=TARGET_CLIP_DURATION_SECONDS,
+        use_claude=use_claude,
     )
 
     print(f"  {len(moments)} momentos encontrados:")
@@ -119,9 +125,21 @@ def run_pipeline(args):
         print(f"\n  Processando clip #{i+1}/{len(moments)}:")
 
         clip_headline = headline
-        if not clip_headline and moment.text:
-            # Gera headline automática a partir do texto
-            clip_headline = _auto_headline(moment.text)
+        # Se a Claude já gerou headline, usa ela
+        if not clip_headline and hasattr(moment, 'headline') and moment.headline:
+            clip_headline = moment.headline
+        elif not clip_headline and moment.text:
+            if use_claude:
+                try:
+                    from src.claude_ai import generate_headline
+                    clip_headline = generate_headline(
+                        clip_text=moment.text,
+                        video_title=video_info.get("title", ""),
+                    )
+                except Exception:
+                    clip_headline = _auto_headline(moment.text)
+            else:
+                clip_headline = _auto_headline(moment.text)
 
         try:
             clip_path = process_clip(
@@ -132,7 +150,7 @@ def run_pipeline(args):
                 clip_name=clip_name,
                 transcript_segments=transcript.get("segments", []),
                 headline_text=clip_headline,
-                category=category,
+                category=getattr(moment, 'category', category),
             )
             generated_clips.append({
                 "path": clip_path,
@@ -237,6 +255,7 @@ def main():
     pipe_parser.add_argument("--headline", help="Texto da headline (auto se não especificado)")
     pipe_parser.add_argument("--category", help="Categoria do banner (ex: FAMOSOS)")
     pipe_parser.add_argument("--campaign-id", type=int, help="ID da campanha para registrar")
+    pipe_parser.add_argument("--smart", action="store_true", help="Usar Claude AI para análise inteligente (requer ANTHROPIC_API_KEY)")
 
     # Campaign
     camp_parser = subparsers.add_parser("campaign", help="Gerenciar campanhas")

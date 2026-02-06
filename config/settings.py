@@ -45,3 +45,7 @@ WHISPER_LANGUAGE = "pt"  # Português
 # --- Claude API (opcional, para análise mais inteligente) ---
 # Defina a variável de ambiente ANTHROPIC_API_KEY se quiser usar
 USE_CLAUDE_FOR_ANALYSIS = False  # True = usa Claude para encontrar momentos, False = só heurísticas
+CLAUDE_MODEL = "claude-haiku-4-5-20251001"  # haiku = barato (~R$0.05/vídeo), sonnet = melhor (~R$0.30/vídeo)
+# Modelos disponíveis:
+#   claude-haiku-4-5-20251001  - Mais rápido e barato (recomendado para começar)
+#   claude-sonnet-4-5-20250929 - Mais inteligente, melhor qualidade de análise
