@@ -7,11 +7,14 @@ Funcionalidades:
 - Sugestão de categoria e estilo de edição
 - Análise de por que certos clipes funcionam
 
+Todas as chamadas são auditadas em output/api_costs.json.
 Custo aproximado: ~R$0.05-0.15 por vídeo analisado (modelo Haiku).
 """
 
 import json
 import os
+
+from src.cost_audit import record_api_call
 
 
 def _get_client():
@@ -35,6 +38,20 @@ def _get_client():
     return anthropic.Anthropic(api_key=api_key)
 
 
+def _track_usage(message, operation: str, model: str, **extra):
+    """Registra uso da API no sistema de auditoria."""
+    usage = message.usage
+    record_api_call(
+        operation=operation,
+        model=model,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        **extra,
+    )
+    cost_info = f"({usage.input_tokens} in + {usage.output_tokens} out tokens)"
+    print(f"    [custo] {operation}: {cost_info}")
+
+
 def find_viral_moments(
     transcript_text: str,
     segments: list[dict],
@@ -49,34 +66,11 @@ def find_viral_moments(
 ) -> list[dict]:
     """
     Usa Claude para analisar a transcrição e encontrar os melhores momentos para clipes virais.
-
-    Muito mais inteligente que as heurísticas de keywords porque:
-    - Entende contexto e narrativa
-    - Identifica setup + punchline (não só a reação)
-    - Encontra momentos controversos/polêmicos que geram engajamento
-    - Sugere onde cortar para manter tensão
-
-    Args:
-        transcript_text: Texto completo da transcrição
-        segments: Segmentos com timestamps [{start, end, text}, ...]
-        video_title: Título do vídeo original
-        video_duration: Duração total em segundos
-        num_clips: Quantos momentos encontrar
-        min_duration: Duração mínima do clipe
-        max_duration: Duração máxima do clipe
-        target_duration: Duração alvo
-        influencer_name: Nome do influenciador (para contexto)
-        model: Modelo da Claude a usar
-
-    Returns:
-        Lista de dicts com {start, end, score, reason, headline, category}
     """
     client = _get_client()
 
-    # Monta a transcrição com timestamps para referência
     timestamped_text = _format_transcript_with_timestamps(segments)
 
-    # Trunca se muito longo (limite de tokens)
     if len(timestamped_text) > 80000:
         timestamped_text = timestamped_text[:80000] + "\n[... transcrição truncada ...]"
 
@@ -127,14 +121,19 @@ Ordene por score (maior primeiro). Score de 0.0 a 1.0."""
         messages=[{"role": "user", "content": prompt}],
     )
 
+    _track_usage(
+        message,
+        operation="find_moments",
+        model=model,
+        video_title=video_title,
+        influencer=influencer_name,
+    )
+
     response_text = message.content[0].text.strip()
 
-    # Extrai JSON da resposta
     try:
-        # Tenta parsear direto
         moments = json.loads(response_text)
     except json.JSONDecodeError:
-        # Tenta encontrar JSON dentro da resposta
         import re
         json_match = re.search(r'\[[\s\S]*\]', response_text)
         if json_match:
@@ -143,20 +142,17 @@ Ordene por score (maior primeiro). Score de 0.0 a 1.0."""
             print(f"  AVISO: Não foi possível parsear resposta da Claude.")
             return []
 
-    # Valida e limpa
     validated = []
     for m in moments:
         start = float(m.get("start", 0))
         end = float(m.get("end", start + target_duration))
 
-        # Garante duração dentro dos limites
         duration = end - start
         if duration < min_duration:
             end = start + min_duration
         elif duration > max_duration:
             end = start + max_duration
 
-        # Garante que não ultrapassa o vídeo
         if video_duration > 0:
             end = min(end, video_duration)
             start = min(start, video_duration - min_duration)
@@ -182,19 +178,7 @@ def generate_headline(
     style: str = "polêmico",
     model: str = "claude-haiku-4-5-20251001",
 ) -> str:
-    """
-    Gera uma headline otimizada para engajamento.
-
-    Args:
-        clip_text: Texto transcrito do clipe
-        video_title: Título do vídeo original
-        influencer_name: Nome do influenciador
-        style: Estilo da headline (polêmico, informativo, engraçado, chocante)
-        model: Modelo da Claude
-
-    Returns:
-        Headline em texto (max 60 chars, CAPS)
-    """
+    """Gera uma headline otimizada para engajamento."""
     client = _get_client()
 
     prompt = f"""Crie UMA headline curta e impactante para um Reel/TikTok.
@@ -219,9 +203,16 @@ Responda APENAS com a headline, nada mais."""
         messages=[{"role": "user", "content": prompt}],
     )
 
+    _track_usage(
+        message,
+        operation="headline",
+        model=model,
+        video_title=video_title,
+        influencer=influencer_name,
+    )
+
     headline = message.content[0].text.strip().strip('"').strip("'")
 
-    # Garante limite de caracteres
     if len(headline) > 60:
         headline = headline[:57] + "..."
 
@@ -234,18 +225,7 @@ def analyze_why_clip_works(
     platform: str = "tiktok",
     model: str = "claude-haiku-4-5-20251001",
 ) -> dict:
-    """
-    Analisa por que um clipe existente funcionou (para aprendizado).
-    Útil para alimentar o sistema de ML futuro.
-
-    Args:
-        clip_text: Texto/descrição do clipe
-        view_count: Número de views
-        platform: Plataforma (tiktok, instagram)
-
-    Returns:
-        Dict com análise {factors, score_breakdown, recommendations}
-    """
+    """Analisa por que um clipe existente funcionou (para aprendizado)."""
     client = _get_client()
 
     prompt = f"""Analise este clipe viral de {platform} e explique POR QUE ele funcionou.
@@ -271,6 +251,8 @@ Responda em JSON:
         messages=[{"role": "user", "content": prompt}],
     )
 
+    _track_usage(message, operation="analyze_clip", model=model)
+
     response_text = message.content[0].text.strip()
 
     try:
@@ -288,16 +270,7 @@ def suggest_clips_strategy(
     research_data: dict = None,
     model: str = "claude-haiku-4-5-20251001",
 ) -> str:
-    """
-    Gera uma estratégia completa de clipes para um influenciador.
-
-    Args:
-        influencer_name: Nome do influenciador
-        research_data: Dados da pesquisa competitiva (opcional)
-
-    Returns:
-        Estratégia em texto
-    """
+    """Gera uma estratégia completa de clipes para um influenciador."""
     client = _get_client()
 
     context = ""
@@ -325,6 +298,8 @@ Seja direto e prático. Foque em ações concretas."""
         messages=[{"role": "user", "content": prompt}],
     )
 
+    _track_usage(message, operation="strategy", model=model, influencer=influencer_name)
+
     return message.content[0].text
 
 
@@ -333,7 +308,6 @@ def _format_transcript_with_timestamps(segments: list[dict]) -> str:
     lines = []
     for seg in segments:
         start = seg.get("start", 0)
-        end = seg.get("end", 0)
         text = seg.get("text", "").strip()
         if text:
             mins = int(start // 60)

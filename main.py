@@ -294,6 +294,18 @@ def main():
     # Templates
     subparsers.add_parser("templates", help="Listar templates de edição")
 
+    # Smart (liga/desliga Claude AI)
+    smart_parser = subparsers.add_parser("smart", help="Ligar/desligar análise com Claude AI")
+    smart_parser.add_argument("--on", action="store_true", help="Ligar Claude AI")
+    smart_parser.add_argument("--off", action="store_true", help="Desligar Claude AI")
+    smart_parser.add_argument("--status", action="store_true", help="Ver status atual")
+
+    # Costs (auditoria de custos)
+    costs_parser = subparsers.add_parser("costs", help="Ver custos da API Claude")
+    costs_parser.add_argument("--detailed", action="store_true", help="Mostrar cada chamada")
+    costs_parser.add_argument("--revenue", type=float, help="Receita total para calcular ROI (BRL)")
+    costs_parser.add_argument("--reset", action="store_true", help="Resetar dados de auditoria")
+
     args = parser.parse_args()
 
     if args.command == "pipeline":
@@ -309,6 +321,10 @@ def main():
         run_research(args)
     elif args.command == "templates":
         run_templates()
+    elif args.command == "smart":
+        run_smart(args)
+    elif args.command == "costs":
+        run_costs(args)
     else:
         parser.print_help()
 
@@ -416,6 +432,82 @@ def run_templates():
     for t in templates:
         print(f"  {t['name']:15s}  {t['description']}")
     print("\nUse --template NOME para aplicar no pipeline.")
+
+
+def run_smart(args):
+    """Liga/desliga a análise com Claude AI."""
+    import re
+
+    settings_path = os.path.join(os.path.dirname(__file__), "config", "settings.py")
+
+    with open(settings_path, "r") as f:
+        content = f.read()
+
+    current = "USE_CLAUDE_FOR_ANALYSIS = True" in content
+
+    if args.on:
+        # Verifica se tem API key
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            print("AVISO: ANTHROPIC_API_KEY não está configurada!")
+            print("Configure com: export ANTHROPIC_API_KEY='sua_chave'")
+            print("Obtenha em: https://console.anthropic.com/settings/keys")
+            print()
+
+        content = re.sub(
+            r'USE_CLAUDE_FOR_ANALYSIS = \w+',
+            'USE_CLAUDE_FOR_ANALYSIS = True',
+            content,
+        )
+        with open(settings_path, "w") as f:
+            f.write(content)
+        print("Claude AI LIGADO")
+        print("Todos os pipelines agora usam análise inteligente.")
+        print("Use 'python main.py costs' para acompanhar gastos.")
+
+    elif args.off:
+        content = re.sub(
+            r'USE_CLAUDE_FOR_ANALYSIS = \w+',
+            'USE_CLAUDE_FOR_ANALYSIS = False',
+            content,
+        )
+        with open(settings_path, "w") as f:
+            f.write(content)
+        print("Claude AI DESLIGADO")
+        print("Pipelines usarão apenas heurísticas (gratuito).")
+        print("Você ainda pode usar --smart no pipeline para ativar pontualmente.")
+
+    else:
+        # Status
+        status = "LIGADO" if current else "DESLIGADO"
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        key_status = f"configurada ({api_key[:12]}...)" if api_key else "NÃO configurada"
+
+        print(f"Claude AI: {status}")
+        print(f"API Key: {key_status}")
+        print()
+        print("Comandos:")
+        print("  python main.py smart --on    Ligar (usa em todos os pipelines)")
+        print("  python main.py smart --off   Desligar (volta para heurísticas)")
+        print("  python main.py costs         Ver quanto já gastou")
+        print()
+        if not current:
+            print("Dica: mesmo desligado, use --smart no pipeline para ativar pontualmente:")
+            print("  python main.py pipeline --url URL --smart")
+
+
+def run_costs(args):
+    """Mostra relatório de custos da API Claude."""
+    from src.cost_audit import get_cost_report, get_roi_analysis, reset_audit
+
+    if args.reset:
+        reset_audit()
+        return
+
+    if args.revenue is not None:
+        print(get_roi_analysis(args.revenue))
+        return
+
+    print(get_cost_report(detailed=args.detailed))
 
 
 if __name__ == "__main__":
