@@ -3,21 +3,25 @@
 Clip Automator - Pipeline de automação de clipes para campanhas de influenciadores.
 
 Uso:
-    python main.py pipeline --url URL [--clips N] [--headline TEXTO] [--category CAT]
-    python main.py campaign --create --name NOME --influencer NOME [--pay VALOR] [--min-views N]
-    python main.py campaign --list [--id N]
-    python main.py campaign --add-link --campaign-id N --clip-id N --platform PLAT --link URL
-    python main.py campaign --submit --campaign-id N --clip-id N
+    python main.py chat                    # Modo conversacional (prompt-driven)
+    python main.py pipeline --url URL      # Pipeline YouTube
+    python main.py twitch --username CANAL # Pipeline Twitch
+    python main.py research --influencer X # Pesquisa competitiva
+    python main.py templates               # Listar templates de edição
+    python main.py campaign --create ...   # Gerenciar campanhas
 
 Exemplos:
+    # Modo conversacional (recomendado)
+    python main.py chat
+
     # Gerar 5 clipes de um vídeo do YouTube
     python main.py pipeline --url "https://youtube.com/watch?v=XXXXX" --clips 5
 
-    # Criar uma campanha
-    python main.py campaign --create --name "Campanha Verão" --influencer "FulanoTV" --pay 5.0
+    # Buscar clipes populares da Twitch
+    python main.py twitch --username "gaules" --clips 10 --min-views 5000
 
-    # Registrar link de postagem
-    python main.py campaign --add-link --campaign-id 1 --clip-id 1 --platform instagram --link "https://instagram.com/reel/xxx"
+    # Pesquisar o que funciona para um influenciador
+    python main.py research --influencer "FulanoTV"
 """
 
 import argparse
@@ -251,14 +255,148 @@ def main():
     camp_parser.add_argument("--platform", help="Plataforma (instagram, tiktok)")
     camp_parser.add_argument("--link", help="Link do post")
 
+    # Chat (modo conversacional)
+    subparsers.add_parser("chat", help="Modo conversacional (prompt-driven)")
+
+    # Twitch
+    twitch_parser = subparsers.add_parser("twitch", help="Buscar clipes da Twitch")
+    twitch_parser.add_argument("--username", required=True, help="Nome do canal na Twitch")
+    twitch_parser.add_argument("--clips", type=int, default=10, help="Número de clipes")
+    twitch_parser.add_argument("--min-views", type=int, default=1000, help="Views mínimas")
+    twitch_parser.add_argument("--period-days", type=int, default=30, help="Período em dias")
+    twitch_parser.add_argument("--edit", action="store_true", help="Editar clipes para mobile")
+    twitch_parser.add_argument("--template", default="clean", help="Template de edição")
+    twitch_parser.add_argument("--campaign-id", type=int, help="ID da campanha")
+
+    # Research
+    research_parser = subparsers.add_parser("research", help="Pesquisa competitiva")
+    research_parser.add_argument("--influencer", required=True, help="Nome do influenciador")
+
+    # Templates
+    subparsers.add_parser("templates", help="Listar templates de edição")
+
     args = parser.parse_args()
 
     if args.command == "pipeline":
         run_pipeline(args)
     elif args.command == "campaign":
         run_campaign(args)
+    elif args.command == "chat":
+        from src.chat import start_chat
+        start_chat()
+    elif args.command == "twitch":
+        run_twitch(args)
+    elif args.command == "research":
+        run_research(args)
+    elif args.command == "templates":
+        run_templates()
     else:
         parser.print_help()
+
+
+def run_twitch(args):
+    """Busca e edita clipes da Twitch."""
+    client_id = os.environ.get("TWITCH_CLIENT_ID")
+    client_secret = os.environ.get("TWITCH_CLIENT_SECRET")
+
+    if not client_id or not client_secret:
+        print("Configure as variáveis de ambiente:")
+        print("  export TWITCH_CLIENT_ID='seu_client_id'")
+        print("  export TWITCH_CLIENT_SECRET='seu_client_secret'")
+        print("\nObtenha em: https://dev.twitch.tv/console/apps (gratuito)")
+        return
+
+    from src.twitch import search_and_download_best_clips
+    from src.editor import process_clip
+    from src.templates import apply_template
+
+    clips = search_and_download_best_clips(
+        username=args.username,
+        client_id=client_id,
+        client_secret=client_secret,
+        max_clips=args.clips,
+        min_views=args.min_views,
+        period_days=args.period_days,
+    )
+
+    if not clips:
+        print("Nenhum clipe encontrado.")
+        return
+
+    if args.edit:
+        print(f"\nEditando {len(clips)} clipes com template '{args.template}'...")
+        output_dir = os.path.join(CLIPS_DIR, f"twitch_{args.username}")
+        os.makedirs(output_dir, exist_ok=True)
+
+        for i, clip in enumerate(clips):
+            clip_name = f"twitch_clip_{i+1:02d}"
+            try:
+                # Converte para vertical
+                output_path = os.path.join(output_dir, f"{clip_name}.mp4")
+                process_clip(
+                    video_path=clip["path"],
+                    start=0,
+                    end=clip["duration"],
+                    output_dir=output_dir,
+                    clip_name=clip_name,
+                    headline_text=clip["title"].upper()[:60],
+                    add_subs=False,  # Twitch clips geralmente são curtos
+                )
+
+                # Aplica template se não for o padrão
+                if args.template != "clean":
+                    template_path = os.path.join(output_dir, f"{clip_name}_styled.mp4")
+                    apply_template(output_path, template_path, args.template)
+                    os.rename(template_path, output_path)
+
+                print(f"  Editado: {output_path}")
+
+                if args.campaign_id:
+                    from src.tracker import add_clip_to_campaign
+                    add_clip_to_campaign(
+                        campaign_id=args.campaign_id,
+                        clip_path=output_path,
+                        source_video_url=clip["url"],
+                        clip_start=0,
+                        clip_end=clip["duration"],
+                    )
+            except Exception as e:
+                print(f"  Erro no clip {i+1}: {e}")
+
+    print("\nPronto! Revise os clipes e poste nas redes sociais.")
+
+
+def run_research(args):
+    """Executa pesquisa competitiva."""
+    from src.research import (
+        research_clips_about,
+        research_youtube_shorts,
+        generate_research_report,
+    )
+
+    influencer = args.influencer
+    print(f"Pesquisando '{influencer}'... isso pode levar alguns minutos.\n")
+
+    youtube_data = research_youtube_shorts(influencer)
+    competitor_data = research_clips_about(influencer)
+
+    report = generate_research_report(
+        influencer_name=influencer,
+        youtube_data=youtube_data,
+        competitor_data=competitor_data,
+        output_path=f"output/research_{influencer.lower().replace(' ', '_')}.txt",
+    )
+    print(report)
+
+
+def run_templates():
+    """Lista templates de edição."""
+    from src.templates import list_templates
+    templates = list_templates()
+    print("Templates de edição disponíveis:\n")
+    for t in templates:
+        print(f"  {t['name']:15s}  {t['description']}")
+    print("\nUse --template NOME para aplicar no pipeline.")
 
 
 if __name__ == "__main__":

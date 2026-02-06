@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: clip-automator-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=changeme
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - TZ=America/Sao_Paulo
+      # Credenciais Twitch (preencha)
+      - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID:-}
+      - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/workflows
+      # Monta o projeto para o n8n acessar os scripts
+      - ../:/home/node/clip-automator
+    networks:
+      - clip-network
+
+  # Worker Python que executa os scripts do pipeline
+  worker:
+    build:
+      context: ..
+      dockerfile: n8n/Dockerfile.worker
+    container_name: clip-automator-worker
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID:-}
+      - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ../:/app
+      - clip_output:/app/output
+    networks:
+      - clip-network
+
+volumes:
+  n8n_data:
+  clip_output:
+
+networks:
+  clip-network:
+    driver: bridge
